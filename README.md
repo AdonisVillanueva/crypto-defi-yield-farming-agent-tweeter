@@ -1,4 +1,4 @@
-# Twitter Yield Strategy Bot 🤖📈
+# Agent YieldDefi Twitter Bot 🤖📈
 
 An AI-powered Twitter bot that provides DeFi and yield farming strategies using DeepSeek's AI capabilities. Twitter bot that works with along with: https://github.com/AdonisVillanueva/crypto-defi-yield-farming-agent
 
