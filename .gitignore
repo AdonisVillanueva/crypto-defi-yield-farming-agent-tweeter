@@ -10,3 +10,7 @@ venv.bak/
 # Database
 *.db
 *.sqlite3
+
+# VSCode
+.vscode/
+*.code-workspace
