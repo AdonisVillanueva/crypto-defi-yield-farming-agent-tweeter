@@ -1,21 +1,24 @@
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import unittest
 from unittest.mock import patch
-from src.twitteragent import TwitterYieldStrategyBot
+
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import your bot class
+from twitter_bot.src.twitteragent import TwitterYieldStrategyBot
 
 class TestTwitterBot(unittest.TestCase):
     @patch('tweepy.API')
     def test_bot_initialization(self, mock_twitter):
-        # Test bot initialization
+        """Test bot initialization"""
         bot = TwitterYieldStrategyBot()
         self.assertIsNotNone(bot)
         
     @patch('requests.post')
     def test_deepseek_api(self, mock_post):
-        # Test DeepSeek API call
+        """Test DeepSeek API call"""
         mock_post.return_value.status_code = 200
         mock_post.return_value.json.return_value = {
             "choices": [{"message": {"content": "test response"}}]

@@ -35,8 +35,6 @@ class TwitterYieldStrategyBot:
         
         # Initialize APIs
         self.twitter_api = self._init_twitter_api()
-        
-        # Configure DeepSeek
         self.deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         self.deepseek_api_url = os.getenv('DEEPSEEK_API_URL')  
         self._init_db()
@@ -46,6 +44,21 @@ class TwitterYieldStrategyBot:
         cryptos = self._detect_cryptos(text)
         sentiment = self._detect_sentiment(text)
         return cryptos, sentiment
+    
+    def _init_twitter_api(self):
+        """Initialize Twitter API connection"""
+        try:
+            auth = tweepy.OAuth1UserHandler(
+                self.twitter_api_key,
+                self.twitter_api_secret,
+                self.twitter_access_token,
+                self.twitter_access_secret
+            )
+            api = tweepy.API(auth, wait_on_rate_limit=True)
+            return api
+        except Exception as e:
+            print(f"Error initializing Twitter API: {e}")
+            raise
 
     def _detect_cryptos(self, text):
         """Detect crypto mentions using regex"""
@@ -174,29 +187,46 @@ class TwitterYieldStrategyBot:
             return None
 
     def _init_db(self):
-        """Initialize SQLite database on PythonAnywhere"""
+        """Initialize SQLite database with cross-platform support"""
         try:
-            # Use absolute path in your home directory
-            db_path = os.path.expanduser('~/twitter_bot/data/processed_tweets.db')
-            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            # Use platform-independent path
+            db_dir = os.path.join(
+                os.path.expanduser('~'),  # Home directory
+                'twitter_bot_data'        # No spaces in directory name
+            )
+            os.makedirs(db_dir, exist_ok=True)
+            db_path = os.path.join(db_dir, 'processed_tweets.db')
             
-            self.conn = sqlite3.connect(db_path)
+            # Configure SQLite connection
+            self.conn = sqlite3.connect(db_path, timeout=20)
+            self.conn.execute('PRAGMA busy_timeout = 5000')
             self.cursor = self.conn.cursor()
             
-            # Enable WAL mode for better concurrency
+            # Enable WAL mode
             self.cursor.execute('PRAGMA journal_mode=WAL')
+            self.cursor.execute('PRAGMA synchronous=NORMAL')
             
-            # Create table with additional metadata
+            # Create table with optimized schema
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS processed_tweets (
                     tweet_id TEXT PRIMARY KEY,
                     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    response_id TEXT
+                    response_id TEXT,
+                    user_handle TEXT,
+                    strategy TEXT,
+                    error TEXT
                 )
             ''')
+            
+            # Create index
+            self.cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_processed_at 
+                ON processed_tweets(processed_at)
+            ''')
+            
             self.conn.commit()
-        except Exception as e:
-            print(f"Database error: {e}")
+        except sqlite3.Error as e:
+            print(f"Database initialization error: {e}")
             raise
 
 if __name__ == "__main__":
