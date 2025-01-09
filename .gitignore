@@ -6,11 +6,20 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+venv310/
 
-# Database
+# Logs and Databases
+*.log
+*.sqlite
 *.db
+*.sql
 *.sqlite3
 
 # VSCode
 .vscode/
 *.code-workspace
+
+# Local Development Files
+local_server.py
+local_config.py
+test_twitteragent_api.py
