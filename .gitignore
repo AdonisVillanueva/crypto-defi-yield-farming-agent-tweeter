@@ -8,6 +8,10 @@ env.bak/
 venv.bak/
 venv310/
 
+# Python Cache
+__pycache__/
+*.py[cod]
+
 # Logs and Databases
 *.log
 *.sqlite
