@@ -84,7 +84,7 @@ def fetch_tweets():
     all_tweets = []
     
     try:
-        query = "@AgentYieldDefi (bullish OR bearish OR crash OR rocket OR long) and (strategy OR plan OR game plan OR roadmap)"
+        query = "@AgentYieldDefi (bullish OR bearish OR crash OR rocket OR long) AND (strategy OR plan OR game plan OR roadmap)"
         # Fetch tweets from the last 5 minutes
         start_time = (datetime.now() - timedelta(minutes=30)).isoformat() + "Z"
         print(f"Fetching tweets with query: {query}, start_time: {start_time}")
