@@ -1,9 +1,5 @@
 import re
-from flask import json
 import time
-import ratelimit
-import requests
-from requests_oauthlib import OAuth1
 import tweepy
 from dotenv import load_dotenv
 from ratelimit import limits, sleep_and_retry
@@ -11,9 +7,42 @@ import os
 from datetime import datetime, timedelta
 from tweepy import Tweet  # Import the Tweet class
 import spacy
+from openai import OpenAI  # Add this import at the top of the file
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Constants
+PREFIX = "[Automated]: "
+PREFIX_LENGTH = len(PREFIX)  # Length of "[Automated]: "
+CUSTOM_STRATEGY_URL = "https://agentyield.streamlit.app/Custom_Strategy"
+
+# Mock Twitter API response
+MOCK_TWEETS = {
+    "data": [
+        {
+            "id": "1234567890123456789",
+            "text": "Bullish sentiment today! @AgentYieldDefi for $SOL",
+            "author_id": "9876543210",
+            "created_at": "2025-01-08T12:34:56Z",
+            "lang": "en",
+            "source": "Twitter Web App"
+        },
+        {
+            "id": "9876543210987654321",
+            "text": "Bearish sentiment for now. @AgentYieldDefi for $BTC",
+            "author_id": "1234567890",
+            "created_at": "2025-01-08T12:30:00Z",
+            "lang": "en",
+            "source": "Twitter for iPhone"
+        }
+    ],
+    "meta": {
+        "newest_id": "9876543210987654321",
+        "oldest_id": "1234567890123456789",
+        "result_count": 2
+    }
+}
 
 # Grab credentials from .env
 consumer_key = os.getenv("TWITTER_CONSUMER_KEY")
@@ -22,6 +51,7 @@ access_token = os.getenv("TWITTER_ACCESS_TOKEN")
 access_token_secret = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
 BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL")
 
 # Global variable to cache the client
 _client = None
@@ -61,7 +91,7 @@ def initialize_twitter_client():
     return _client
 
 @sleep_and_retry
-@limits(calls=450, period=900)  # 450 calls per 15 minutes
+@limits(calls=15, period=900)  # 15 calls per 15 minutes for free tier
 def fetch_tweets(client):
     """Fetch the latest tweets mentioning @AgentYieldDefi with bullish or bearish sentiment."""
     all_tweets = []
@@ -100,42 +130,45 @@ def fetch_tweets(client):
             all_tweets.extend(response.data)
         else:
             print("No tweets found for the given query.")
+        
+        print("Fetched tweets saved to temp_fetched_tweets.json")
     
-    except ratelimit.RateLimitException:
-        print("Rate limit reached. Sleeping for 900 seconds...")
-        time.sleep(900)  # Sleep for 15 minutes
-        print("Resuming after sleep...")
-        return fetch_tweets(client)  # Retry
     except tweepy.TweepyException as e:
-        print(f"Error fetching tweets: {e}")
+        if "429" in str(e):  # Handle rate limit errors
+            print("Rate limit reached. Sleeping for 900 seconds...")
+            time.sleep(900)  # Sleep for 15 minutes
+            print("Resuming after sleep...")
+            return fetch_tweets(client)  # Retry
+        else:
+            print(f"Error fetching tweets: {e}")
     except Exception as e:
         print(f"Unexpected error: {e}")
     
     return all_tweets
 
-def reply_to_tweet(tweet_id, user_handle, strategy, client):
+@sleep_and_retry
+@limits(calls=15, period=900)  # 15 calls per 15 minutes for free tier
+def reply_to_tweet(tweet_id, user_handle, strategy, sentiment, crypto, client):
     """Reply to a tweet with the generated strategy."""
     if not strategy:
         print("No strategy provided. Skipping reply.")
+        return    
+
+    # Truncate the strategy text if necessary
+    if len(strategy) > 280:
+        print("Strategy is too long. Skipping reply.")
         return
-    
-    # Format the reply text
-    reply_text = f"@{user_handle} {strategy}"
-    
-    # Ensure the reply text is within Twitter's character limit
-    if len(reply_text) > 280:
-        reply_text = reply_text[:277] + "..."  # Truncate and add ellipsis
-    
+
     # Send the reply
     try:
-        client.create_tweet(text=reply_text, in_reply_to_tweet_id=tweet_id)
+        client.create_tweet(text=strategy, in_reply_to_tweet_id=tweet_id)
         print(f"Replied to tweet {tweet_id} by @{user_handle} with strategy: {strategy}")
     except tweepy.TweepyException as e:
         if "Too Many Requests" in str(e):
             print("Rate limit reached. Sleeping for 900 seconds...")
             time.sleep(900)  # Sleep for 15 minutes
             print("Resuming after sleep...")
-            reply_to_tweet(tweet_id, user_handle, strategy, client)  # Retry
+            reply_to_tweet(tweet_id, user_handle, strategy, sentiment, crypto, client)  # Retry
         else:
             print(f"Error replying to tweet: {e}")
     except Exception as e:
@@ -159,13 +192,11 @@ def _detect_cryptos(tweet_text, nlp):
             # Check if the entity text looks like a crypto symbol (e.g., 3-5 uppercase letters)
             if ent.text.isupper() and 2 <= len(ent.text) <= 5:
                 return ent.text  # Return the first detected crypto
-    
-    # If no crypto is found, return None
-        # If no crypto is found, check for common crypto names using regex
+
+    # If no crypto is found, check for common crypto names using regex
     crypto_pattern = r'\b(BTC|ETH|BNB|XRP|ADA|SOL|MATIC|AVAX|DOT|DOGE|SHIB|USDT|USDC|DAI|SOLANA|SUI)\b'
     matches = re.findall(crypto_pattern, tweet_text.upper())
     return matches[0] if matches else None
-
 
 def _detect_sentiment(tweet_text):
     """Detect sentiment (bullish, bearish, or neutral) from tweet text."""
@@ -192,56 +223,63 @@ def _detect_sentiment(tweet_text):
     else:
         return "neutral"
 
+def generate_strategy(crypto, sentiment):
+    """Generate a strategy using the DeepSeek API"""
 
-def generate_strategy(tweet, nlp):
-    """Generate a strategy using the DeepSeek API for a single tweet."""
-    if not tweet:
-        return None
-    
-    # Extract tweet text
-    tweet_text = tweet.text
-    crypto = _detect_cryptos(tweet_text, nlp)
-    sentiment = _detect_sentiment(tweet_text)
-    
     if not crypto:
         return None
     
+    # Calculate remaining space for the strategy text
+    total_tweet_limit = 280
+    custom_link = f"{CUSTOM_STRATEGY_URL}?sentiment={sentiment}&crypto={crypto}"
+    link_length = len(" More: ") + len(custom_link)  # Full link length
+    remaining_space = total_tweet_limit - PREFIX_LENGTH - link_length
+
     # Prepare the prompt for DeepSeek
     prompt = f"""
     Provide a {sentiment} DeFi and Yield Farming strategy for {crypto}.
     Include:
     1. Brief description (1 sentence)
     2. Key action (1 step)
-    3. Main benefit
-    4. Risk level (1-5)
-    5. One relevant link
+    3. Pros and Cons
 
-    Format concisely for Twitter (max 280 chars).
+    Format concisely for Twitter (max {remaining_space} chars, as {link_length} chars are reserved for the link and {PREFIX_LENGTH} chars for the prefix).
     Example format:
-    "[Crypto] Strategy: [1-sentence desc]. Action: [key step]. Benefit: [main benefit]. Risk: [level]. More: [link]"
+    "[Crypto] Strategy: [1-sentence desc]. Action: [key step]. Benefit: [main benefit]. Risk: [level]."
+
+    IMPORTANT: The strategy text must be no longer than {remaining_space} characters, including all punctuation and spaces.
     """
     
     try:
-        # Call DeepSeek API
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "prompt": prompt,
-            "max_tokens": 150,  # Adjust based on DeepSeek API limits
-            "temperature": 0.7  # Adjust for creativity
-        }
-        response = requests.post(
-            "https://api.deepseek.com/v1/completions",  # Replace with actual DeepSeek API endpoint
-            headers=headers,
-            json=data
+        # Initialize OpenAI client with DeepSeek API
+        client = OpenAI(
+            api_key=DEEPSEEK_API_KEY,
+            base_url=DEEPSEEK_API_URL
         )
-        response.raise_for_status()
+        
+        # Call DeepSeek API
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[
+                {"role": "system", "content": "You are a DeFi and Yield Farming strategy crypo financial expert."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,  # Adjust based on DeepSeek API limits
+            temperature=0.7  # Adjust for creativity
+        )
         
         # Extract the generated strategy
-        strategy = response.json().get("choices", [{}])[0].get("text", "").strip()
-        return strategy
+        strategy = response.choices[0].message.content.strip()
+        strategy_with_link = f"{PREFIX}{strategy} More: {custom_link}"
+
+        # Double-check the total length
+        if len(strategy_with_link) > 280:
+            # If it's still too long, truncate the strategy text further
+            max_strategy_length = 280 - PREFIX_LENGTH - link_length
+            strategy = strategy[:max_strategy_length] + "..."
+            strategy_with_link = f"{PREFIX}{strategy} More: {custom_link}"
+        
+        return strategy_with_link
     
     except Exception as e:
         print(f"Error generating strategy with DeepSeek API: {e}")
@@ -252,7 +290,7 @@ def get_latest_tweet(tweets: list[Tweet]) -> Tweet | None:
     if not tweets:
         print("No tweets found.")
         return None
-    
+        
     # Return the first tweet (assumed to be the latest)
     return tweets[0]
 
@@ -275,6 +313,7 @@ def main():
 
     # Fetch tweets
     tweets = fetch_tweets(client)
+    #tweets = MOCK_TWEETS["data"]
     if not tweets:
         print("No tweets found.")
         return
@@ -285,17 +324,20 @@ def main():
         return    
     
     # Extract tweet ID and user handle from the latest tweet
-    tweet_id = latest_tweet.id  # Now safe to access
-    user_handle = latest_tweet.author_id  # Note: This is the author ID, not the handle
+    tweet_id = latest_tweet["id"]  # Now safe to access
+    user_handle = latest_tweet["author_id"]  # Note: This is the author ID, not the handle
         
+    crypto = _detect_cryptos(latest_tweet["text"], nlp)
+    sentiment = _detect_sentiment(latest_tweet["text"])
+
     # Generate strategies for all tweets
-    strategy = generate_strategy(latest_tweet, nlp)
+    strategy = generate_strategy(crypto, sentiment)
     if not strategy:
         print("No strategies generated.")
         return  
     
     # Reply to tweets with generated strategies
-    reply_to_tweet(tweet_id, user_handle, strategy, client)
+    reply_to_tweet(tweet_id, user_handle, strategy, sentiment, crypto, client)
 
 if __name__ == "__main__":
     main()
