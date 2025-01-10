@@ -312,11 +312,25 @@ def main():
     nlp = spacy.load("en_core_web_sm")
 
     # Fetch tweets
-    tweets = fetch_tweets(client)
-    #tweets = MOCK_TWEETS["data"]
+    try:
+        tweets = fetch_tweets(client)
+    except tweepy.TweepyException as e:
+        if "Too Many Requests" in str(e):
+            print("Rate limit reached. Sleeping for 900 seconds...")
+            time.sleep(900)  # Sleep for 15 minutes
+            print("Resuming after sleep...")
+            tweets = fetch_tweets(client)  # Retry
+        else:
+            print(f"Error fetching tweets: {e}")
+            return
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return
+
     if not tweets:
         print("No tweets found.")
         return
+
     # Get the latest tweet
     latest_tweet: Tweet | None = get_latest_tweet(tweets)
     if not latest_tweet:
@@ -327,9 +341,14 @@ def main():
     tweet_id = latest_tweet["id"]  # Now safe to access
     user_handle = latest_tweet["author_id"]  # Note: This is the author ID, not the handle
         
+    # Extract crypto and sentiment from the tweet
     crypto = _detect_cryptos(latest_tweet["text"], nlp)
     sentiment = _detect_sentiment(latest_tweet["text"])
-
+    
+    if not crypto:
+        print("No crypto detected in the tweet. Skipping strategy generation.")
+        return
+        
     # Generate strategies for all tweets
     strategy = generate_strategy(crypto, sentiment)
     if not strategy:
