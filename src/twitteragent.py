@@ -57,12 +57,24 @@ DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL")
 # Global variable to cache the client
 _client = None
 
+# Define the absolute path for the database
+DB_PATH = os.path.expanduser("~/replied_tweets.db")
+
 def initialize_db():
-    conn = sqlite3.connect("replied_tweets.db")
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS replied_tweets (tweet_id TEXT PRIMARY KEY)")
-    conn.commit()
-    conn.close()
+    """Initialize the SQLite database and create the replied_tweets table if it doesn't exist."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS replied_tweets (
+                tweet_id TEXT PRIMARY KEY
+            )
+        """)
+        conn.commit()
+        conn.close()
+        print(f"Database initialized at {DB_PATH}")
+    except sqlite3.Error as e:
+        print(f"Error initializing database: {e}")
 
 def is_tweet_replied(tweet_id):
     conn = sqlite3.connect("replied_tweets.db")
