@@ -1,4 +1,5 @@
 import re
+import sqlite3
 import time
 import tweepy
 from dotenv import load_dotenv
@@ -55,6 +56,28 @@ DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL")
 
 # Global variable to cache the client
 _client = None
+
+def initialize_db():
+    conn = sqlite3.connect("replied_tweets.db")
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS replied_tweets (tweet_id TEXT PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+
+def is_tweet_replied(tweet_id):
+    conn = sqlite3.connect("replied_tweets.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT tweet_id FROM replied_tweets WHERE tweet_id = ?", (tweet_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result is not None
+
+def save_replied_tweet(tweet_id):
+    conn = sqlite3.connect("replied_tweets.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO replied_tweets (tweet_id) VALUES (?)", (tweet_id,))
+    conn.commit()
+    conn.close()
 
 # Authenticate with Twitter API
 def initialize_twitter_client():
@@ -128,10 +151,17 @@ def fetch_tweets(client):
         if hasattr(response, 'data') and response.data:
             print(f"Fetched {len(response.data)} tweets.")
             all_tweets.extend(response.data)
+        
+            # Filter out tweets that have already been replied to
+            filtered_tweets = [
+                tweet for tweet in response.data
+                if not is_tweet_replied(str(tweet.id))
+            ]
+            
+            print(f"Filtered {len(filtered_tweets)} new tweets after excluding replied ones.")
+            all_tweets.extend(filtered_tweets)            
         else:
             print("No tweets found for the given query.")
-        
-        print("Fetched tweets saved to temp_fetched_tweets.json")
     
     except tweepy.TweepyException as e:
         if "429" in str(e):  # Handle rate limit errors
@@ -314,6 +344,7 @@ def main():
     # Fetch tweets
     try:
         tweets = fetch_tweets(client)
+        #tweets = MOCK_TWEETS["data"] 
     except tweepy.TweepyException as e:
         if "Too Many Requests" in str(e):
             print("Rate limit reached. Sleeping for 900 seconds...")
@@ -336,7 +367,7 @@ def main():
     if not latest_tweet:
         print("No latest tweet found.")
         return    
-    
+ 
     # Extract tweet ID and user handle from the latest tweet
     tweet_id = latest_tweet["id"]  # Now safe to access
     user_handle = latest_tweet["author_id"]  # Note: This is the author ID, not the handle
@@ -354,7 +385,7 @@ def main():
     if not strategy:
         print("No strategies generated.")
         return  
-    
+        
     # Reply to tweets with generated strategies
     reply_to_tweet(tweet_id, user_handle, strategy, sentiment, crypto, client)
 
