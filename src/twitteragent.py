@@ -76,8 +76,7 @@ def fetch_tweets(client):
     
     try:
         query = "@AgentYieldDefi (bullish OR bearish OR crash OR rocket OR long) AND (strategy OR plan OR game plan OR roadmap)"
-        # Fetch tweets from the last 5 minutes
-        start_time = (datetime.now() - timedelta(minutes=30)).isoformat() + "Z"
+        start_time = (datetime.now() - timedelta(minutes=30)).isoformat() + "Z"  # Set start_time to 30 minutes ago
         print(f"Fetching tweets with query: {query}, start_time: {start_time}")
         
         response = client.search_recent_tweets(
@@ -114,7 +113,7 @@ def fetch_tweets(client):
         print("Rate limit reached. Sleeping for 900 seconds...")
         time.sleep(900)  # Sleep for 15 minutes
         print("Resuming after sleep...")
-        return fetch_tweets()  # Retry
+        return fetch_tweets(client)  # Retry
     except tweepy.TweepyException as e:
         print(f"Error fetching tweets: {e}")
     except Exception as e:
