@@ -80,7 +80,7 @@ except Exception as e:
 
 @sleep_and_retry
 @limits(calls=450, period=900)  # 450 calls per 15 minutes
-def fetch_tweets():
+def fetch_tweets(client):
     """Fetch the latest tweets mentioning @AgentYieldDefi with bullish or bearish sentiment."""
     all_tweets = []
     
