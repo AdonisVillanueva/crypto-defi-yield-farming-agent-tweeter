@@ -23,18 +23,18 @@ access_token_secret = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
 BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
+# Global variable to cache the client
+_client = None
+
 # Authenticate with Twitter API
 def initialize_twitter_client():
-    """
-    Initializes and validates the Tweepy Client using environment variables.
+    """Initialize the Twitter client and cache it."""
+    global _client
     
-    Returns:
-        tweepy.Client: The initialized Tweepy Client instance.
+    # Return cached client if it exists
+    if _client is not None:
+        return _client
     
-    Raises:
-        ValueError: If any required environment variable is missing.
-        tweepy.TweepyException: If the client initialization fails.
-    """
     # Load credentials from environment variables
     credentials = {
         "BEARER_TOKEN": BEARER_TOKEN,
@@ -50,23 +50,15 @@ def initialize_twitter_client():
         raise ValueError(f"Missing required environment variables: {', '.join(missing_keys)}")
     
     # Initialize the Tweepy Client
-    client = tweepy.Client(
+    _client = tweepy.Client(
         bearer_token=credentials["BEARER_TOKEN"],
         consumer_key=credentials["consumer_key"],
         consumer_secret=credentials["consumer_secret"],
         access_token=credentials["access_token"],
         access_token_secret=credentials["access_token_secret"]
     )
-    
-    # Test client initialization
-    try:
-        user = client.get_me()
-        print(f"Client initialized successfully. User: {user.data}")
-    except tweepy.TweepyException as e:
-        print(f"Error initializing client: {e}")
-        raise
-    
-    return client
+
+    return _client
 
 @sleep_and_retry
 @limits(calls=450, period=900)  # 450 calls per 15 minutes
@@ -75,7 +67,7 @@ def fetch_tweets(client):
     all_tweets = []
     
     try:
-        query = "@AgentYieldDefi (bullish OR bearish OR crash OR rocket OR long) AND (strategy OR plan OR game plan OR roadmap)"
+        query = '@AgentYieldDefi (bullish OR bearish OR crash OR rocket OR long) (strategy OR plan OR "game plan" OR roadmap)'
         start_time = (datetime.now() - timedelta(minutes=30)).isoformat() + "Z"  # Set start_time to 30 minutes ago
         print(f"Fetching tweets with query: {query}, start_time: {start_time}")
         
@@ -290,8 +282,7 @@ def main():
     latest_tweet: Tweet | None = get_latest_tweet(tweets)
     if not latest_tweet:
         print("No latest tweet found.")
-        return
-    
+        return    
     
     # Extract tweet ID and user handle from the latest tweet
     tweet_id = latest_tweet.id  # Now safe to access

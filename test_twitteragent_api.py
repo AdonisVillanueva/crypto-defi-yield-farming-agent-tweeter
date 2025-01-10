@@ -5,7 +5,7 @@ from src.twitteragent import (
     fetch_tweets,_detect_cryptos)
 def main():
     # Fetch tweets
-    crypto = _detect_cryptos("I'm bullish SUI and I'm looking for a strategy")
+    crypto = _detect_cryptos("I'm bullish sui and I'm looking for a strategy")
     print(crypto)
 
 if __name__ == "__main__":
