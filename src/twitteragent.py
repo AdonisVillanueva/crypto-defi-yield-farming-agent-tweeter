@@ -130,12 +130,24 @@ def reply_to_tweet(tweet_id, user_handle, strategy, client):
     # Format the reply text
     reply_text = f"@{user_handle} {strategy}"
     
+    # Ensure the reply text is within Twitter's character limit
+    if len(reply_text) > 280:
+        reply_text = reply_text[:277] + "..."  # Truncate and add ellipsis
+    
     # Send the reply
     try:
         client.create_tweet(text=reply_text, in_reply_to_tweet_id=tweet_id)
         print(f"Replied to tweet {tweet_id} by @{user_handle} with strategy: {strategy}")
+    except tweepy.TweepyException as e:
+        if "Too Many Requests" in str(e):
+            print("Rate limit reached. Sleeping for 900 seconds...")
+            time.sleep(900)  # Sleep for 15 minutes
+            print("Resuming after sleep...")
+            reply_to_tweet(tweet_id, user_handle, strategy, client)  # Retry
+        else:
+            print(f"Error replying to tweet: {e}")
     except Exception as e:
-        print(f"Error replying to tweet: {e}")
+        print(f"Unexpected error: {e}")
 
 def parse_tweet(text):
     """Extract crypto and sentiment from tweet."""
