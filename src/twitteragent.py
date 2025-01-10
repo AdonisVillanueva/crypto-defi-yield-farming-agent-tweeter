@@ -1,6 +1,7 @@
 import re
 from flask import json
 import time
+import ratelimit
 import requests
 from requests_oauthlib import OAuth1
 import tweepy
@@ -119,6 +120,11 @@ def fetch_tweets():
         else:
             print("No tweets found for the given query.")
     
+    except ratelimit.RateLimitException:
+        print("Rate limit reached. Sleeping for 900 seconds...")
+        time.sleep(900)  # Sleep for 15 minutes
+        print("Resuming after sleep...")
+        return fetch_tweets()  # Retry
     except tweepy.TweepyException as e:
         print(f"Error fetching tweets: {e}")
     except Exception as e:
