@@ -68,16 +68,6 @@ def initialize_twitter_client():
     
     return client
 
-try:
-    client = initialize_twitter_client()
-    # Now you can use `client` for further operations
-except ValueError as ve:
-    print(f"Configuration error: {ve}")
-except tweepy.TweepyException as te:
-    print(f"Twitter API error: {te}")
-except Exception as e:
-    print(f"Unexpected error: {e}")
-
 @sleep_and_retry
 @limits(calls=450, period=900)  # 450 calls per 15 minutes
 def fetch_tweets(client):
@@ -132,7 +122,7 @@ def fetch_tweets(client):
     
     return all_tweets
 
-def reply_to_tweet(tweet_id, user_handle, strategy):
+def reply_to_tweet(tweet_id, user_handle, strategy, client):
     """Reply to a tweet with the generated strategy."""
     if not strategy:
         print("No strategy provided. Skipping reply.")
@@ -153,9 +143,6 @@ def parse_tweet(text):
     crypto = _detect_cryptos(text)
     sentiment = _detect_sentiment(text)
     return crypto, sentiment
-
-# Load the pre-trained English model
-nlp = spacy.load("en_core_web_sm")
 
 def _detect_cryptos(tweet_text):
     """Detect cryptocurrencies dynamically using spaCy's NER."""
@@ -203,14 +190,14 @@ def _detect_sentiment(tweet_text):
         return "neutral"
 
 
-def generate_strategy(tweet):
+def generate_strategy(tweet, nlp):
     """Generate a strategy using the DeepSeek API for a single tweet."""
     if not tweet:
         return None
     
     # Extract tweet text
     tweet_text = tweet.text
-    crypto = _detect_cryptos(tweet_text)
+    crypto = _detect_cryptos(tweet_text, nlp)
     sentiment = _detect_sentiment(tweet_text)
     
     if not crypto:
@@ -267,8 +254,20 @@ def get_latest_tweet(tweets: list[Tweet]) -> Tweet | None:
     return tweets[0]
 
 def main():
+    try:
+        client = initialize_twitter_client()
+    except ValueError as ve:
+        print(f"Configuration error: {ve}")
+    except tweepy.TweepyException as te:
+        print(f"Twitter API error: {te}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+
+    # Load the pre-trained English model
+    nlp = spacy.load("en_core_web_sm")
+
     # Fetch tweets
-    tweets = fetch_tweets()
+    tweets = fetch_tweets(client)
     if not tweets:
         print("No tweets found.")
         return
@@ -284,13 +283,13 @@ def main():
     user_handle = latest_tweet.author_id  # Note: This is the author ID, not the handle
         
     # Generate strategies for all tweets
-    strategy = generate_strategy(latest_tweet)
+    strategy = generate_strategy(latest_tweet, nlp)
     if not strategy:
         print("No strategies generated.")
         return  
     
     # Reply to tweets with generated strategies
-    reply_to_tweet(tweet_id, user_handle, strategy)
+    reply_to_tweet(tweet_id, user_handle, strategy, client)
 
 if __name__ == "__main__":
     main()
