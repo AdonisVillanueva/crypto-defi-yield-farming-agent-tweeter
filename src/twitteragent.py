@@ -155,7 +155,7 @@ def parse_tweet(text):
     sentiment = _detect_sentiment(text)
     return crypto, sentiment
 
-def _detect_cryptos(tweet_text):
+def _detect_cryptos(tweet_text, nlp):
     """Detect cryptocurrencies dynamically using spaCy's NER."""
     # Process the tweet text
     doc = nlp(tweet_text)
@@ -266,13 +266,17 @@ def get_latest_tweet(tweets: list[Tweet]) -> Tweet | None:
 
 def main():
     try:
+        # Initialize the Twitter API client
         client = initialize_twitter_client()
     except ValueError as ve:
         print(f"Configuration error: {ve}")
+        return
     except tweepy.TweepyException as te:
         print(f"Twitter API error: {te}")
+        return
     except Exception as e:
         print(f"Unexpected error: {e}")
+        return
 
     # Load the pre-trained English model
     nlp = spacy.load("en_core_web_sm")
